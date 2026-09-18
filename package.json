@@ -1,0 +1,109 @@
+{
+  "name": "react-native-voice-glow",
+  "version": "0.1.0",
+  "description": "Sound-reactive glow for React Native \u2014 a centered, colorful beam along the bottom edge that rises and blooms with voice. A Skia port of voice-glow.",
+  "main": "lib/commonjs/index.js",
+  "module": "lib/module/index.js",
+  "types": "lib/typescript/commonjs/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./lib/typescript/module/index.d.ts",
+        "default": "./lib/module/index.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/index.d.ts",
+        "default": "./lib/commonjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "spec",
+    "!**/__tests__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src",
+    "format": "oxfmt src",
+    "test": "jest",
+    "verify": "npm run typecheck && npm run lint && npm test",
+    "verify:golden": "node scripts/verify-golden.mjs",
+    "prepare": "bob build"
+  },
+  "keywords": [
+    "react-native",
+    "voice",
+    "glow",
+    "audio",
+    "visualizer",
+    "skia",
+    "ai",
+    "chat",
+    "expo"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kuraydev/react-native-voice-glow.git"
+  },
+  "author": "kuraydev (https://github.com/kuraydev)",
+  "license": "MIT",
+  "peerDependencies": {
+    "@shopify/react-native-skia": ">=1.5.0",
+    "react": ">=18.0.0",
+    "react-native": ">=0.74.0",
+    "react-native-audio-api": ">=0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native-audio-api": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@react-native/babel-preset": "^0.86.3",
+    "@react-native/jest-preset": "^0.86.2",
+    "@shopify/react-native-skia": "^2.12.0",
+    "@types/jest": "^29.5.14",
+    "@types/react": "^19.0.0",
+    "jest": "^29.7.0",
+    "oxlint": "^0.15.0",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-builder-bob": "^0.43.0",
+    "typescript": "^5.7.0"
+  },
+  "jest": {
+    "preset": "@react-native/jest-preset",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/lib/"
+    ]
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "commonjs",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  }
+}
