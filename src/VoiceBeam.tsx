@@ -5,12 +5,14 @@ import {
   Path,
   RadialGradient,
   Skia,
+  rect,
+  rrect,
   vec,
 } from '@shopify/react-native-skia';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, View, type LayoutChangeEvent, type ViewStyle } from 'react-native';
 
-import { CEILING_HALF_WIDTH, CEILING_HEIGHT, advance, bandPoints, emptyFrame, lobeSpan } from './driver';
+import { advance, bandPoints, emptyFrame, lobeSpan, multipliers, voiceLobes } from './driver';
 import { clamp01, edgeEnvelope, wrapX } from './math';
 import { resolveConfig } from './presets';
 import type { VoiceBeamTheme, VoiceBeamType, VoiceConfig, VoiceFrame } from './types';
@@ -109,29 +111,44 @@ export function VoiceBeam({
     setSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
   }, []);
 
-  const bloomHeight = CEILING_HEIGHT * config.reach * config.scale * 2.2;
+  // Upstream's three multipliers: overall opacity, height, width. The lobe
+  // sizes are RADII scaled by these, which is what makes the glow span the
+  // whole host rather than sit in a puddle at its centre.
   const lit = clamp01(frame.level);
-  const centre = size.width / 2 + frame.sweep * (lobeSpan(config) * config.processingTravel) / 2;
-  const baseline = bloomHeight / 2;
+  const { glow, h: hMul, w: wMul } = multipliers(config, lit);
 
-  // Each lobe is one colour of the palette, offset around the ring and faded
-  // out at the wrap edge so it never pops across.
+  const baseline = size.height;
+  const centre =
+    size.width / 2 + (frame.sweep * (lobeSpan(config) * config.processingTravel)) / 2;
   const span = lobeSpan(config);
-  const lobes = config.colors.map((color, index) => {
-    const slot = index - (config.colors.length - 1) / 2;
-    const offset = wrapX(
-      (slot * span) / Math.max(1, config.colors.length) + frame.flowOffset,
-      span,
-    );
-    const envelope = edgeEnvelope(offset, span);
-    const band = frame.bands[index % 3] ?? lit;
-    const height =
-      (CEILING_HEIGHT * config.reach * config.scale * (0.35 + 0.65 * lit) +
-        config.bend * config.scale * lit * 0.5) *
-      (0.7 + 0.3 * band);
-    const width = CEILING_HALF_WIDTH * config.spread * config.scale * (0.6 + 0.4 * lit);
-    return { color, envelope, height, width, x: centre + offset };
-  });
+  // Where a lobe's colour reaches full transparency, as a share of its radius.
+  const fade = Math.min(0.95, Math.max(0.4, 0.7 * config.softness));
+
+  // Bloom (widest, softest) → inner light → stroke, exactly upstream's stack.
+  const LAYERS: Array<{ sw: number; sh: number; y: number; alpha: number; blur: number }> = [
+    { sw: 1.15, sh: 1.5, y: 0, alpha: config.theme === 'dark' ? 0.72 : 0.46, blur: 32 },
+    { sw: 0.9, sh: 0.9, y: 0, alpha: 0.4, blur: 18 },
+    { sw: 1, sh: 1, y: 2, alpha: 0.46, blur: 11 },
+  ];
+
+  const lobesFor = (sw: number, sh: number, y: number) =>
+    voiceLobes.map((lobe, index) => {
+      const x = wrapX(lobe.x * config.lobeSpacing + frame.flowOffset, span);
+      const band = frame.bands[lobe.band] ?? lit;
+      // The band a lobe follows lifts it 0.6–1.3×; the envelope fades it at
+      // the wrap so colours cycle through the centre.
+      const lift =
+        (config.bandsFollowVoice ? 0.6 + 0.7 * band : 1) * edgeEnvelope(x, span);
+      return {
+        key: index,
+        color: config.colors[index % config.colors.length]!,
+        cx: centre + x * wMul * config.scale,
+        cy: baseline + y * config.scale,
+        rx: lobe.w * sw * wMul * config.scale,
+        ry: lobe.h * sh * hMul * lift * config.scale,
+        lift,
+      };
+    });
 
   const band = useMemo(() => {
     if (config.bandStrength <= 0 || size.width === 0) return null;
@@ -141,8 +158,11 @@ export function VoiceBeam({
     return path;
   }, [config, frame, size.width, baseline, centre]);
 
-  const bandStrength = config.bandStrength * (0.2 + 0.8 * lit);
+  // The rim is gated on the bend: flat at silence, so nothing is drawn until
+  // the voice lifts the ceiling.
+  const bandStrength = config.bandStrength * lit * lit;
   const split = config.bandAberration * config.scale;
+  const radius = config.radius > 0 ? config.radius : size.height / 2;
 
   return (
     <View style={style} onLayout={onLayout}>
@@ -151,44 +171,80 @@ export function VoiceBeam({
         pointerEvents="none"
         accessible={false}
         importantForAccessibility="no-hide-descendants"
-        style={[styles.canvas, { height: bloomHeight, bottom: -bloomHeight / 2 }]}
+        style={StyleSheet.absoluteFill}
       >
-        <Group blendMode="plus">
-          {lobes.map((lobe, i) =>
-            lobe.envelope <= 0.001 ? null : (
-              <Group key={i} layer={<Blur blur={18 * config.glowSize * config.scale} />}>
-                <Path
-                  path={ovalPath(lobe.x, baseline, lobe.width, lobe.height)}
-                  opacity={lobe.envelope * (0.25 + 0.75 * lit)}
-                >
-                  <RadialGradient
-                    c={vec(lobe.x, baseline)}
-                    r={Math.max(lobe.width, lobe.height)}
-                    colors={[lobe.color, `${lobe.color}00`]}
-                  />
-                </Path>
-              </Group>
-            ),
-          )}
-
-          {band && config.bandAberration > 0 && (
-            <Group layer={<Blur blur={2.5 * config.scale} />}>
-              <Group transform={[{ translateY: -split }]}>
-                <Path path={band} style="stroke" strokeWidth={2.2 * config.scale} strokeCap="round"
-                      color={config.bandColors.above} opacity={0.5 * bandStrength} />
-              </Group>
-              <Path path={band} style="stroke" strokeWidth={2.2 * config.scale} strokeCap="round"
-                    color={config.bandColors.mid} opacity={0.5 * bandStrength} />
-              <Group transform={[{ translateY: split }]}>
-                <Path path={band} style="stroke" strokeWidth={2.2 * config.scale} strokeCap="round"
-                      color={config.bandColors.below} opacity={0.5 * bandStrength} />
-              </Group>
+        {/* Clipped to the host's rounded rect: the glow is light behind the
+            surface, not a halo hanging off it. */}
+        <Group
+          clip={rrect(rect(0, 0, size.width, size.height), radius, radius)}
+          blendMode={config.theme === 'dark' ? 'screen' : 'multiply'}
+          opacity={glow}
+        >
+          {LAYERS.map((layer, li) => (
+            <Group key={li} layer={<Blur blur={layer.blur * config.glowSize * config.scale} />}>
+              {lobesFor(layer.sw, layer.sh, layer.y).map((lobe) =>
+                lobe.lift <= 0.001 ? null : (
+                  <Path
+                    key={lobe.key}
+                    path={ovalPath(lobe.cx, lobe.cy, lobe.rx, lobe.ry)}
+                    opacity={layer.alpha}
+                  >
+                    <RadialGradient
+                      c={vec(lobe.cx, lobe.cy)}
+                      r={Math.max(lobe.rx, lobe.ry)}
+                      colors={[lobe.color, `${lobe.color}00`]}
+                      positions={[0, fade]}
+                    />
+                  </Path>
+                ),
+              )}
             </Group>
-          )}
+          ))}
 
-          {band && (
-            <Path path={band} style="stroke" strokeWidth={1.4 * config.scale} strokeCap="round"
-                  color={config.bandColors.core} opacity={Math.min(1, bandStrength)} />
+          {/* The hot core the colours fan out from. */}
+          <Path
+            path={ovalPath(
+              centre,
+              baseline,
+              30 * config.coreSize * wMul * config.scale,
+              30 * config.coreSize * hMul * config.scale,
+            )}
+            opacity={(config.theme === 'dark' ? 0.16 : 0.24) * lit}
+          >
+            <RadialGradient
+              c={vec(centre, baseline)}
+              r={Math.max(30 * config.coreSize * wMul, 30 * config.coreSize * hMul) * config.scale}
+              colors={
+                config.theme === 'dark'
+                  ? ['#FFFFFF', '#FFFFFF00']
+                  : ['#000000', '#00000000']
+              }
+              positions={[0, 0.65]}
+            />
+          </Path>
+
+          {band && bandStrength > 0.01 && (
+            <Group>
+              {config.bandAberration > 0 && (
+                <Group layer={<Blur blur={2 * config.scale} />}>
+                  <Group transform={[{ translateY: -split }]}>
+                    <Path path={band} style="stroke" strokeWidth={1.4 * config.scale}
+                          strokeCap="round" color={config.bandColors.above}
+                          opacity={0.05 * bandStrength} />
+                  </Group>
+                  <Path path={band} style="stroke" strokeWidth={1.4 * config.scale}
+                        strokeCap="round" color={config.bandColors.mid}
+                        opacity={0.05 * bandStrength} />
+                  <Group transform={[{ translateY: split }]}>
+                    <Path path={band} style="stroke" strokeWidth={1.4 * config.scale}
+                          strokeCap="round" color={config.bandColors.below}
+                          opacity={0.05 * bandStrength} />
+                  </Group>
+                </Group>
+              )}
+              <Path path={band} style="stroke" strokeWidth={0.9 * config.scale} strokeCap="round"
+                    color={config.bandColors.core} opacity={Math.min(1, 0.1 * bandStrength)} />
+            </Group>
           )}
         </Group>
       </Canvas>
@@ -196,16 +252,9 @@ export function VoiceBeam({
   );
 }
 
-function ovalPath(cx: number, cy: number, width: number, height: number) {
+/** An ellipse of the given radii, centred on (cx, cy). */
+function ovalPath(cx: number, cy: number, rx: number, ry: number) {
   const path = Skia.Path.Make();
-  path.addOval({ x: cx - width / 2, y: cy - height, width, height: height * 2 });
+  path.addOval({ x: cx - rx, y: cy - ry, width: rx * 2, height: ry * 2 });
   return path;
 }
-
-const styles = StyleSheet.create({
-  canvas: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-  },
-});

@@ -40,6 +40,16 @@ export interface VoiceConfig {
   glowSize: number;
   /** Resting distance between lobes. @default 0.85 */
   lobeSpacing: number;
+  /** How far a lobe's colour reaches before it fades out. @default 1.07 */
+  softness: number;
+  /** Size of the hot core at the centre of the edge. @default 1 */
+  coreSize: number;
+  /** Lobes follow the voice bands individually. @default true */
+  bandsFollowVoice: boolean;
+  /** The ceiling's tuned width multiplier. @default 0.75 */
+  rangeWidth: number;
+  /** The ceiling's tuned height multiplier. @default 1 */
+  rangeHeight: number;
 
   bandStrength: number;
   bandWidth: number;

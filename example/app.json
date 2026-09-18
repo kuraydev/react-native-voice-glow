@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Voice Glow",
+    "slug": "voice-glow-example",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "voiceglow",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "dev.kuray.voiceglow.example",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "The example listens to your voice so the glow can react to it."
+      }
+    },
+    "android": {
+      "package": "dev.kuray.voiceglow.example",
+      "permissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "plugins": ["expo-router"]
+  }
+}

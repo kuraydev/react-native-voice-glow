@@ -1,17 +1,57 @@
 import { bell, clamp01, follow, shape, tailLift, wrapX } from './math';
 import type { VoiceConfig, VoiceFrame } from './types';
 
-/** Ceiling geometry the glow is masked to (px at scale 1), from upstream. */
+/** The ceiling the glow is masked to (px at scale 1), from upstream. */
 export const CEILING_HALF_WIDTH = 170;
 export const CEILING_HEIGHT = 64;
 /** Samples along the band line. */
 export const BAND_SAMPLES = 56;
-/** Resting distance between lobes at scale 1. */
-export const LOBE_SPACING = 120;
 
-/** The lobe ring's span — how far a lobe travels before it wraps. */
+/** One lobe: a resting offset from centre, its size, and the band it follows. */
+export interface VoiceLobe {
+  x: number;
+  w: number;
+  h: number;
+  band: 0 | 1 | 2;
+}
+
+/**
+ * Seven lobes: the centre rides the low band, its neighbours the mids, the
+ * outer pair the highs and the far pair the mids again, so a voice makes the
+ * colours ripple outward instead of one blob pumping. `w`/`h` are gradient
+ * RADII, scaled per frame by the driver's width and height multipliers.
+ */
+export const voiceLobes: readonly VoiceLobe[] = [
+  { x: 0, w: 74, h: 46, band: 0 },
+  { x: -36, w: 54, h: 40, band: 1 },
+  { x: 36, w: 54, h: 40, band: 1 },
+  { x: -72, w: 48, h: 32, band: 2 },
+  { x: 72, w: 48, h: 32, band: 2 },
+  { x: -108, w: 42, h: 26, band: 1 },
+  { x: 108, w: 42, h: 26, band: 1 },
+];
+
+/** Resting distance between neighbouring lobes, px. */
+export const LOBE_SPACING = 36;
+/** Width of the ring the lobes travel around — one full turn of the flow. */
+export const LOBE_SPAN = LOBE_SPACING * voiceLobes.length;
+
+/** The ring's span for a config — how far a lobe travels before it wraps. */
 export function lobeSpan(config: VoiceConfig): number {
-  return Math.max(1, LOBE_SPACING * config.lobeSpacing * config.spread * config.scale);
+  return Math.max(1, LOBE_SPAN * config.lobeSpacing);
+}
+
+/**
+ * The three multipliers every layer is scaled by, straight from upstream's
+ * driver: overall opacity, height, and width.
+ */
+export function multipliers(config: VoiceConfig, level: number) {
+  const eff = clamp01(level);
+  return {
+    glow: 0.15 + 0.85 * eff,
+    h: 0.5 + config.reach * eff,
+    w: 0.85 + config.spread * eff,
+  };
 }
 
 export function emptyFrame(): VoiceFrame {
@@ -93,7 +133,7 @@ export function advance(
   return state;
 }
 
-/** The band line as sampled points, in the host's coordinate space. */
+/** The rim that traces the ceiling's hump, as sampled points. */
 export function bandPoints(
   config: VoiceConfig,
   frame: VoiceFrame,
@@ -102,24 +142,29 @@ export function bandPoints(
   centre: number,
 ): Array<[number, number]> {
   const level = clamp01(frame.level);
+  const { h: hMul, w: wMul } = multipliers(config, level);
   const halfWidth = width / 2 + config.bandTailOverflow;
-  const peak =
-    CEILING_HEIGHT * config.bandWidth * config.bandPosition * config.scale * (0.3 + 0.7 * level);
-  const offset = config.bandOffset * config.scale;
+  const ceiling =
+    CEILING_HEIGHT * config.rangeHeight * hMul * config.scale * 0.5 +
+    config.bend * config.scale * level;
+  const peak = Math.min(ceiling * config.bandPosition, /* never cross the content */ 0.42 * width);
+  const bellHalfWidth = Math.max(
+    1,
+    CEILING_HALF_WIDTH * config.rangeWidth * config.bandWidth * 0.5 * wMul * config.scale,
+  );
 
   const points: Array<[number, number]> = [];
   for (let i = 0; i <= BAND_SAMPLES; i++) {
     const x = -halfWidth + (i / BAND_SAMPLES) * halfWidth * 2;
-    const normalised = x / Math.max(1, halfWidth);
-    const b = bell(normalised, config.bandCurve, config.bandSpread, config.bandSkew);
+    const b = bell(x / bellHalfWidth, config.bandCurve, config.bandSpread, config.bandSkew);
     const t = tailLift(
       Math.abs(x),
       halfWidth,
-      config.bandTail,
+      config.bandTail * 0.35,
       config.bandTailPosition,
       config.bandTailCurve,
     );
-    points.push([centre + x, baseline + offset - peak * (b + t)]);
+    points.push([centre + x, baseline - peak * (b + t)]);
   }
   return points;
 }

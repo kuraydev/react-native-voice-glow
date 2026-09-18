@@ -1,7 +1,25 @@
 import type { VoiceBeamTheme, VoiceBeamType, VoiceConfig } from './types';
 
-export const darkPalette = ['#FF6B35', '#FF3B87', '#9C59FF', '#3B9EFF'];
-export const lightPalette = ['#FF854A', '#FF5494', '#AB70FF', '#4FABFF'];
+/** Seven colours, one per lobe (centre first, then pairs outward). */
+export const darkPalette = [
+  '#FF4678', // pink
+  '#3CBEFF', // sky
+  '#AF46FF', // purple
+  '#3CDC82', // green
+  '#FF9628', // orange
+  '#5A64FF', // indigo
+  '#28C8BE', // teal
+];
+/** Deeper values: on a white surface they sit at far lower opacity. */
+export const lightPalette = [
+  '#FFC915', // gold
+  '#7EC4FF', // sky
+  '#B428E6', // violet
+  '#EB64A0', // rose
+  '#FFB07A', // peach
+  '#9AA0FF', // periwinkle
+  '#7FD9EE', // aqua
+];
 
 export const darkBandColors = {
   core: '#FFFFFF',
@@ -33,6 +51,11 @@ export const voiceDefaults: VoiceConfig = {
   bend: 60,
   glowSize: 1,
   lobeSpacing: 0.85,
+  softness: 1.07,
+  coreSize: 1,
+  bandsFollowVoice: true,
+  rangeWidth: 0.75,
+  rangeHeight: 1,
 
   bandStrength: 1.55,
   bandWidth: 2.15,
@@ -85,6 +108,10 @@ export const voiceTypePresets: Record<VoiceBeamType, Partial<VoiceConfig>> = {
     processingTravel: 2,
     cornerFollow: 0,
     lobeSpacing: 0.45,
+    rangeWidth: 0.8,
+    rangeHeight: 0.7,
+    coreSize: 0.25,
+    softness: 0.88,
   },
   mobile: {
     scale: 1.25,
